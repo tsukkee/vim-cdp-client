@@ -19,8 +19,7 @@ function! cdp#http#get(url) abort
 
     let opt = #{
     \   mode: 'raw',
-    \   drop: 'never',
-    \   callback: {ch, msg -> s:http_get_callback(ch, msg)}
+    \   drop: 'never'
     \}
     let ch = ch_open(host, opt)
 
@@ -30,7 +29,9 @@ function! cdp#http#get(url) abort
 
     let s:body = ''
     let s:headers = []
-    call ch_sendraw(ch, req)
+    call ch_sendraw(ch, req, #{
+    \   callback: {ch, msg -> s:http_get_callback(ch, msg)}
+    \})
 
     while empty(s:body)
         sleep 10ms
