@@ -11,7 +11,7 @@ let s:Byte = s:V.import('Data.List.Byte')
 let s:CRLF = "\r\n"
 
 let cdp#websocket#OPEN = 'open'
-let cdp#websocket#CLOSE = 'clsoe'
+let cdp#websocket#CLOSE = 'close'
 let cdp#websocket#MESSAGE = 'message'
 let cdp#websocket#ERROR = 'error'
 
@@ -30,10 +30,11 @@ function! cdp#websocket#new(url) abort
     \   mode: 'raw',
     \   drop: 'never'
     \}
+    echo host
     let ch = ch_open(host, opt)
 
     if ch_status(ch) ==# 'fail'
-        throw 'Feiled to open a channlel with ' . a:url
+        throw 'Fail to open a channlel with ' . a:url
     endif
 
     let key = s:Base64.encode(s:randomString(16))
@@ -83,16 +84,16 @@ function! s:WebSocket_send(data) dict abort
     " str -> blob
     " TODO: find the proper way to do this
     let tmp = tempname()
-    call writefile([command], tmp, 'bs')
+    call writefile([a:data], tmp, 'bs')
     let payload = readfile(tmp, 'B')
 
     " masking
-    for i in range(len(command))
+    for i in range(len(a:data))
         let payload[i] = xor(payload[i], mask[i % 4])
     endfor
     let req += payload
 
-    call ch_sendraw(a:ch, req)
+    call ch_sendraw(self._ch, req)
 endfunction
 
 function! s:WebSocket_close() dict abort
@@ -100,18 +101,18 @@ function! s:WebSocket_close() dict abort
     call self._invokeListeners(cdp#websocket#CLOSE)
 endfunction
 
-function! s:WebSocket_on(eventName, handler) dict abort
+function! s:WebSocket_on(eventName, listner) dict abort
     if !has_key(self._listeners, a:eventName)
         let self._listeners[a:eventName] = []
     endif
-    call add(self._listeners[a:eventName], a:handler)
+    call add(self._listeners[a:eventName], a:listner)
 endfunction
 
-function! s:WebSocket_off(eventName, handler) dict abort
+function! s:WebSocket_off(eventName, listner) dict abort
     if !has_key(self._listeners, a:eventName)
         return
     endif
-    let idx = index(self._listeners, a:handler)
+    let idx = index(self._listeners, a:listner)
     if idx >= 0
         call remove(self._listeners[a:eventName], idx)
     endif
@@ -120,7 +121,7 @@ endfunction
 function! s:WebSocket_upgradeCallback(msg, key) dict abort
     if match(a:msg, 'HTTP/1.1 101') != 0
         call ch_close(self._ch)
-        call self._invokeCallback(cdp#websocket#ERROR, 'HTTP GET Upgrade failed')
+        call self._invokeListeners(cdp#websocket#ERROR, 'HTTP GET Upgrade failed')
         return
     endif
 
@@ -137,11 +138,12 @@ function! s:WebSocket_upgradeCallback(msg, key) dict abort
 
     if !isValid
         call ch_close(self._ch)
-        call self._invokeCallback(cdp#websocket#ERROR, 'Sec-WebSocket-Accept is not match')
+        call self._invokeListeners(cdp#websocket#ERROR, 'Sec-WebSocket-Accept is not match')
         return
     endif
 
-    call self._invokeCallback(cdp#websocket#OPEN)
+    " call self._invokeListeners(cdp#websocket#OPEN)
+    call self._invokeListeners('open')
     let self._timer = timer_start(100, {timer -> self._onMessage()}, {'repeat': -1})
 endfunction
 
@@ -150,17 +152,18 @@ function! s:WebSocket_invokeListeners(eventName, ...) dict abort
         return
     endif
 
-    for listener in self._listeners
-        call call(listener, a:000)
+    for Listener in self._listeners[a:eventName]
+        call call(Listener, a:000)
     endfor
 endfunction
 
-function! s:WebSocket_onMessage(msg) dict abort
+function! s:WebSocket_onMessage() dict abort
     if !ch_canread(self._ch)
         return
     endif
 
     let blob = ch_readblob(self._ch)
+    echo blob
 
     let fin = and(0b10000000, blob[0]) / 128
     if fin != 1
@@ -192,7 +195,8 @@ function! s:WebSocket_onMessage(msg) dict abort
     call writefile(payload, tmp, "bs")
     let response = join(readfile(tmp), '')
 
-    call self._invokeListeners(cdp#websocket#MESSAGE, response)
+    " call self._invokeListeners(cdp#websocket#MESSAGE, response)
+    call self._invokeListeners('message', response)
 endfunction
 
 function! s:getSecWebSocketAcceptFromKey(key)
