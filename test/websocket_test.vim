@@ -7,7 +7,7 @@ let g:websocket = cdp#websocket#new('ws://localhost:8080/echo')
 function! s:onOpen() abort
     echom 'Open!'
     call g:websocket.send('hogeああああああああああああああ')
-    " call g:websocket.send('hogeああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ')
+    call g:websocket.send('hogeああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ')
 endfunction
 
 function! s:onClose() abort

@@ -53,12 +53,25 @@ endfunction
 function! s:WebSocket_send(data) dict abort
     " FIN: 0x1 RSV1-3: 0x0
     " Opcode: 0x01
+    " TODO: support the case fin is not 1??
     let req = 0z81
 
     " MASK: 0x1
     " Payload Length: len(a:data)
     " TODO: len() > 127
-    let req = add(req, or(0x80, len(a:data)))
+    let length = len(a:data)
+
+    if length <= 125
+        let req = add(req, or(0x80, len(a:data)))
+    elseif length <= 0xFFFF
+        let req = add(req, or(0x80, 126))
+        let req = add(req, length / 256)
+        let req = add(req, and(0xFF, length))
+    elseif length <= 0xFFFFFFFF
+        let req = add(req, or(0x80, 127))
+    else
+        echoerr 'too long message'
+    endif
 
     " Masking Key: 0z12345678
     " TODO: use rand()
