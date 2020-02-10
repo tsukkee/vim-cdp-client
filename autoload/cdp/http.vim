@@ -7,25 +7,13 @@ let s:CRLF = "\r\n"
 
 " very simple HTTP GET (sync)
 function! cdp#http#get(url) abort
-    let matches = matchlist(a:url, '^\(\l\+://\)\([^/]\+\)\(\S*\)$')
-    if empty(matches)
-        throw a:url . ' is not valid url'
-    endif
-    let [scheme, host, path] = matches[1:3]
-
+    let [scheme, host, path] = cdp#util#parse_url(a:url)
     if scheme !=# 'http://'
         throw scheme . ' is not supported'
     endif
 
-    let opt = #{
-    \   mode: 'raw',
-    \   drop: 'never'
-    \}
-    let ch = ch_open(host, opt)
-
-    let req = 'GET ' . path . ' HTTP/1.1' . s:CRLF .
-    \         'Host: ' . host . s:CRLF .
-    \         s:CRLF
+    let ch = cdp#util#ch_open(host)
+    let req = cdp#util#build_http_request('GET', host, path)
 
     let s:body = ''
     let s:headers = []

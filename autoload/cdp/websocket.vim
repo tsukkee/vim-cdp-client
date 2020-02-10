@@ -10,41 +10,25 @@ let s:Byte = s:V.import('Data.List.Byte')
 
 let s:CRLF = "\r\n"
 
-let cdp#websocket#OPEN = 'open'
-let cdp#websocket#CLOSE = 'close'
-let cdp#websocket#MESSAGE = 'message'
-let cdp#websocket#ERROR = 'error'
+let g:cdp#websocket#OPEN = 'open'
+let g:cdp#websocket#CLOSE = 'close'
+let g:cdp#websocket#MESSAGE = 'message'
+let g:cdp#websocket#ERROR = 'error'
 
 function! cdp#websocket#new(url) abort
-    let matches = matchlist(a:url, '^\(\l\+://\)\([^/]\+\)\(\S*\)$')
-    if empty(matches)
-        throw a:url . ' is not valid url'
-    endif
-    let [scheme, host, path] = matches[1:3]
-
+    let [scheme, host, path] = cdp#util#parse_url(a:url)
     if scheme !=# 'ws://'
         throw scheme . ' is not supported'
     endif
 
-    let opt = #{
-    \   mode: 'raw',
-    \   drop: 'never'
-    \}
-    echo host
-    let ch = ch_open(host, opt)
-
-    if ch_status(ch) ==# 'fail'
-        throw 'Fail to open a channlel with ' . a:url
-    endif
-
+    let ch = cdp#util#ch_open(host)
     let key = s:Base64.encode(s:randomString(16))
-    let req = 'GET ' . path . ' HTTP/1.1' . s:CRLF .
-    \         'Host: ' . host . s:CRLF .
-    \         'Upgrade: websocket' . s:CRLF .
-    \         'Connection: Upgrade' . s:CRLF .
-    \         'Sec-WebSocket-Key: ' . key . s:CRLF .
-    \         'Sec-WebSocket-Version: 13' . s:CRLF .
-    \         s:CRLF
+    let req = cdp#util#build_http_request('GET', host, path, {
+    \   'Upgrade': 'websocket',
+    \   'Connection': 'Upgrade',
+    \   'Sec-WebSocket-Key': key,
+    \   'Sec-WebSocket-Version': '13'
+    \})
 
     let this = #{
     \   send: function('s:WebSocket_send'),
@@ -98,7 +82,7 @@ endfunction
 
 function! s:WebSocket_close() dict abort
     call ch_close(self._ch)
-    call self._invokeListeners(cdp#websocket#CLOSE)
+    call self._invokeListeners(g:cdp#websocket#CLOSE)
 endfunction
 
 function! s:WebSocket_on(eventName, listner) dict abort
@@ -121,7 +105,7 @@ endfunction
 function! s:WebSocket_upgradeCallback(msg, key) dict abort
     if match(a:msg, 'HTTP/1.1 101') != 0
         call ch_close(self._ch)
-        call self._invokeListeners(cdp#websocket#ERROR, 'HTTP GET Upgrade failed')
+        call self._invokeListeners(g:cdp#websocket#ERROR, 'HTTP GET Upgrade failed')
         return
     endif
 
@@ -138,12 +122,11 @@ function! s:WebSocket_upgradeCallback(msg, key) dict abort
 
     if !isValid
         call ch_close(self._ch)
-        call self._invokeListeners(cdp#websocket#ERROR, 'Sec-WebSocket-Accept is not match')
+        call self._invokeListeners(g:cdp#websocket#ERROR, 'Sec-WebSocket-Accept is not match')
         return
     endif
 
-    " call self._invokeListeners(cdp#websocket#OPEN)
-    call self._invokeListeners('open')
+    call self._invokeListeners(g:cdp#websocket#OPEN)
     let self._timer = timer_start(100, {timer -> self._onMessage()}, {'repeat': -1})
 endfunction
 
@@ -163,13 +146,14 @@ function! s:WebSocket_onMessage() dict abort
     endif
 
     let blob = ch_readblob(self._ch)
-    echo blob
 
+    " TODO: support when fin is not 1
     let fin = and(0b10000000, blob[0]) / 128
     if fin != 1
         echoerr 'Not Supported when fin is not 1'
     endif
 
+    " TODO: support binary frame
     let opcode = and(0b00001111, blob[0])
     if opcode != 1
         echoerr 'Only text frame is supported'
@@ -177,7 +161,7 @@ function! s:WebSocket_onMessage() dict abort
 
     let mask = and(0b10000000, blob[1])
     if mask != 0
-        echoerr 'The message is not from server'
+        echoerr 'The message is not from a server'
     endif
 
     let len = and(0b01111111, blob[1])
@@ -191,12 +175,14 @@ function! s:WebSocket_onMessage() dict abort
     endif
 
     let payload = blob[idx:idx+len]
+
+    " blob -> str
+    " TODO: find the proper way to do this
     let tmp = tempname()
     call writefile(payload, tmp, "bs")
     let response = join(readfile(tmp), '')
 
-    " call self._invokeListeners(cdp#websocket#MESSAGE, response)
-    call self._invokeListeners('message', response)
+    call self._invokeListeners(g:cdp#websocket#MESSAGE, response)
 endfunction
 
 function! s:getSecWebSocketAcceptFromKey(key)
