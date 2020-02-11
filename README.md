@@ -15,5 +15,6 @@ call cdp.send('Page.reload')
 
 # References
 
+- http://tyru.hatenablog.com/entry/2018/02/08/015007
 - https://tools.ietf.org/html/rfc6455
 - https://chromedevtools.github.io/devtools-protocol/tot/
