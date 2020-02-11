@@ -5,7 +5,7 @@ set cpo&vim
 
 let s:CRLF = "\r\n"
 
-" very simple HTTP GET (sync)
+" very simple HTTP GET (sync) only for getting Chrome Debugger list
 function! cdp#http#get(url) abort
     let [scheme, host, path] = cdp#util#parse_url(a:url)
     if scheme !=# 'http://'

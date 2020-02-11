@@ -15,6 +15,7 @@ let g:cdp#websocket#CLOSE = 'close'
 let g:cdp#websocket#MESSAGE = 'message'
 let g:cdp#websocket#ERROR = 'error'
 
+" very simple WebSocket only for Chrome Debugger on localhost
 function! cdp#websocket#new(url) abort
     let [scheme, host, path] = cdp#util#parse_url(a:url)
     if scheme !=# 'ws://'
@@ -75,9 +76,8 @@ function! s:WebSocket_send(data) dict abort
         echoerr 'too long message'
     endif
 
-    " Masking Key: 0z12345678
-    " TODO: use rand()
-    let mask = 0z12345678
+    " Masking Key: random 32bit key
+    let mask = eval('0z' . s:randomHexString(8))
     let req += mask
 
     " str -> blob
@@ -94,7 +94,9 @@ function! s:WebSocket_send(data) dict abort
 endfunction
 
 function! s:WebSocket_close() dict abort
+    " TODO: send close opcode
     call ch_close(self._ch)
+    call timer_stop(self._timer)
     call self._invokeListeners(g:cdp#websocket#CLOSE)
 endfunction
 
@@ -177,6 +179,7 @@ function! s:parseMessage(blob)
     endif
 
     " TODO: support binary frame
+    " TODO: support ping&pong opcode
     let opcode = and(0b00001111, blob[0])
     if opcode != 1
         echoerr 'Only text frame is supported'
@@ -219,6 +222,17 @@ endfunction
 
 function! s:randomString(length)
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    const size = len(chars)
+
+    let result = ''
+    for i in range(a:length)
+        let result .= chars[rand() % size]
+    endfor
+    return result
+endfunction
+
+function! s:randomHexString(length)
+    const chars = 'ABCDEF0123456789'
     const size = len(chars)
 
     let result = ''
