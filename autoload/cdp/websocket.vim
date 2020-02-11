@@ -58,17 +58,19 @@ function! s:WebSocket_send(data) dict abort
 
     " MASK: 0x1
     " Payload Length: len(a:data)
-    " TODO: len() > 127
     let length = len(a:data)
-
     if length <= 125
         let req = add(req, or(0x80, len(a:data)))
     elseif length <= 0xFFFF
         let req = add(req, or(0x80, 126))
-        let req = add(req, length / 256)
+        let req = add(req, and(0xFF, length / 256))
         let req = add(req, and(0xFF, length))
     elseif length <= 0xFFFFFFFF
         let req = add(req, or(0x80, 127))
+        let req = add(req, and(0xFF, length / 256 / 256 / 256))
+        let req = add(req, and(0xFF, length / 256 / 256))
+        let req = add(req, and(0xFF, length / 256))
+        let req = add(req, and(0xFF, length))
     else
         echoerr 'too long message'
     endif
@@ -79,10 +81,8 @@ function! s:WebSocket_send(data) dict abort
     let req += mask
 
     " str -> blob
-    " TODO: find the proper way to do this
-    let tmp = tempname()
-    call writefile([a:data], tmp, 'bs')
-    let payload = readfile(tmp, 'B')
+    let bytes = s:Byte.from_string(a:data)
+    let payload = s:Byte.to_blob(bytes)
 
     " masking
     for i in range(len(a:data))
@@ -160,6 +160,16 @@ function! s:WebSocket_onMessage() dict abort
 
     let blob = ch_readblob(self._ch)
 
+    " more than one message can be joined
+    while !empty(blob)
+        let [response, blob] = s:parseMessage(blob)
+        call self._invokeListeners(g:cdp#websocket#MESSAGE, response)
+    endwhile
+endfunction
+
+function! s:parseMessage(blob)
+    let blob = a:blob
+
     " TODO: support when fin is not 1
     let fin = and(0b10000000, blob[0]) / 128
     if fin != 1
@@ -187,15 +197,13 @@ function! s:WebSocket_onMessage() dict abort
         let idx = 6
     endif
 
-    let payload = blob[idx:idx+len]
+    let payload = blob[idx:idx+len-1]
 
     " blob -> str
-    " TODO: find the proper way to do this
-    let tmp = tempname()
-    call writefile(payload, tmp, "bs")
-    let response = join(readfile(tmp), '')
+    let bytes = s:Byte.from_blob(payload)
+    let response = s:Byte.to_string(bytes)
 
-    call self._invokeListeners(g:cdp#websocket#MESSAGE, response)
+    return [response, blob[idx+len:]]
 endfunction
 
 function! s:getSecWebSocketAcceptFromKey(key)
