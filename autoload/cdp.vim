@@ -3,6 +3,9 @@ scriptencoding utf-8
 let s:save_cpo = &cpo
 set cpo&vim
 
+let s:V = vital#cdp#new()
+let s:Promise = s:V.import('Async.Promise')
+
 function! cdp#new(port=9222) abort
     let body = cdp#http#get('http://localhost:' . a:port . '/json')
     let json = json_decode(body)
@@ -28,17 +31,34 @@ function! cdp#new(port=9222) abort
 endfunction
 
 function! s:CDPClient_send(method, params={}) abort dict
+    let id = s:uniqueId()
     let request = #{
-    \   id: s:uniqueId(),
+    \   id: id,
     \   method: a:method,
     \   params: a:params
     \}
 
     call self._websocket.send(json_encode(request))
+    return s:Promise.new({resolve, reject ->
+    \   execute('let s:requests['. id . '] = #{resolve: resolve, reject: reject}')})
 endfunction
 
+let s:requests = {}
+
 function! s:onMessage(msg) abort
-    echom a:msg
+    let response = json_decode(a:msg)
+
+    if has_key(s:requests, response.id)
+        let id = response.id
+        if has_key(response, 'result')
+            call s:requests[id].resolve(response['result'])
+        elseif has_key(response, 'error')
+            call s:requests[id].reject(response['error'])
+        else
+            call s:requests[id].reject('Unknown error')
+        endif
+        unlet s:requests[id]
+    endif
 endfunction
 
 let s:messageId = 0
